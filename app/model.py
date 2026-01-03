@@ -3,7 +3,8 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 class ClaimVerifier:
     def __init__(self):
-        self.model_name = "roberta-large-mnli"
+        self.model_name = "textattack/bert-base-uncased-MNLI"
+
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name)
         self.model.eval()
@@ -16,10 +17,12 @@ class ClaimVerifier:
             truncation=True,
             max_length=512
         )
+
         with torch.no_grad():
             logits = self.model(**inputs).logits
             probs = torch.softmax(logits, dim=1)
 
-        entailment = probs[0][2].item()
-        label = "SUPPORTED" if entailment > 0.5 else "HALLUCINATED"
-        return label, round(entailment, 3)
+        entailment_score = probs[0][2].item()
+        label = "SUPPORTED" if entailment_score > 0.5 else "HALLUCINATED"
+
+        return label, round(entailment_score, 3)

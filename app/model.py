@@ -9,6 +9,7 @@ HEADERS = {
     "Authorization": f"Bearer {HF_API_KEY}"
 }
 
+# Hugging Face MNLI label mapping
 LABEL_MAP = {
     "LABEL_0": "CONTRADICTION",
     "LABEL_1": "NEUTRAL",
@@ -20,11 +21,12 @@ class ClaimVerifier:
         if not HF_API_KEY:
             return "ERROR", 0.0
 
+        # ✅ CORRECT MNLI INPUT FORMAT
         payload = {
-            "inputs": {
-                "premise": document,
-                "hypothesis": claim
-            }
+            "inputs": [
+                document,
+                claim
+            ]
         }
 
         try:
@@ -40,18 +42,19 @@ class ClaimVerifier:
 
             result = response.json()
 
+            # Expected: List[Dict]
             if not isinstance(result, list):
                 return "ERROR", 0.0
 
             scores = {}
             for item in result:
-                mapped = LABEL_MAP.get(item["label"])
-                if mapped:
-                    scores[mapped] = item["score"]
+                label = LABEL_MAP.get(item.get("label"))
+                if label:
+                    scores[label] = item.get("score", 0.0)
 
             entailment_score = scores.get("ENTAILMENT", 0.0)
-            label = "SUPPORTED" if entailment_score >= 0.5 else "HALLUCINATED"
 
+            label = "SUPPORTED" if entailment_score >= 0.5 else "HALLUCINATED"
             return label, round(entailment_score, 3)
 
         except Exception:

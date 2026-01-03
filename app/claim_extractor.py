@@ -1,6 +1,9 @@
 import nltk
-nltk.download("punkt")
+
+try:
+    nltk.data.find("tokenizers/punkt")
+except LookupError:
+    nltk.download("punkt", quiet=True)
 
 def extract_claims(paragraph: str):
-    sentences = nltk.sent_tokenize(paragraph)
-    return [s for s in sentences if len(s.split()) > 4]
+    return nltk.sent_tokenize(paragraph)

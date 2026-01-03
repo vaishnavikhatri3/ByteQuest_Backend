@@ -1,9 +1,7 @@
 fastapi
 uvicorn
-torch
-transformers
+gunicorn
 nltk
 requests
 beautifulsoup4
 duckduckgo-search
-gunicorn

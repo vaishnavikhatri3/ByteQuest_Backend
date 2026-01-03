@@ -1,28 +1,30 @@
-import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import requests
+import os
+
+HF_API_URL = "https://api-inference.huggingface.co/models/typeform/distilbert-base-uncased-mnli"
+HF_API_KEY = os.getenv("HF_API_KEY")
+
+headers = {
+    "Authorization": f"Bearer {HF_API_KEY}"
+}
 
 class ClaimVerifier:
-    def __init__(self):
-        self.model_name = "typeform/distilbert-base-uncased-mnli"
-
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name)
-        self.model.eval()
-
     def verify(self, document: str, claim: str):
-        inputs = self.tokenizer(
-            document,
-            claim,
-            return_tensors="pt",
-            truncation=True,
-            max_length=512
-        )
+        payload = {
+            "inputs": {
+                "premise": document,
+                "hypothesis": claim
+            }
+        }
 
-        with torch.no_grad():
-            logits = self.model(**inputs).logits
-            probs = torch.softmax(logits, dim=1)
+        response = requests.post(HF_API_URL, headers=headers, json=payload)
+        result = response.json()
 
-        entailment_score = probs[0][2].item()
+        if isinstance(result, list):
+            scores = {item["label"]: item["score"] for item in result[0]}
+            entailment_score = scores.get("ENTAILMENT", 0.0)
+        else:
+            entailment_score = 0.0
+
         label = "SUPPORTED" if entailment_score > 0.5 else "HALLUCINATED"
-
         return label, round(entailment_score, 3)

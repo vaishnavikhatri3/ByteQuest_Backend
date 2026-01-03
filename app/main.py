@@ -1,59 +1,81 @@
-from fastapi import FastAPI
-from app.schemas import VerifyRequest, VerifyResponse, ClaimResult, CitationResult
-from app.claim_extractor import extract_claims
-from app.search_engine import search_trusted_sources
-from app.scraper import scrape_page
-from app.model import ClaimVerifier
-from app.citation_checker import check_citation
-from app.utils import calculate_trust_score
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List
 
-app = FastAPI(title="AI Hallucination & Citation Verification API")
+from app.model import ClaimVerifier
+from app.claim_extractor import extract_claims
+from app.citation_checker import check_citations
+
+app = FastAPI(
+    title="ByteQuest Backend",
+    description="AI Hallucination & Citation Verification System",
+    version="1.0"
+)
 
 verifier = ClaimVerifier()
 
+# ------------------------
+# HEALTH CHECK (RENDER)
+# ------------------------
 @app.get("/")
-def root():
+def health():
     return {"status": "Backend running"}
 
-@app.post("/verify", response_model=VerifyResponse)
-def verify_ai_output(data: VerifyRequest):
-    claims = extract_claims(data.paragraph)
+# ------------------------
+# REQUEST SCHEMA
+# ------------------------
+class VerifyRequest(BaseModel):
+    paragraph: str
 
-    claim_results = []
-    citation_results = []
+# ------------------------
+# RESPONSE SCHEMA
+# ------------------------
+class ClaimResult(BaseModel):
+    claim: str
+    label: str
+    confidence: float
+
+class VerifyResponse(BaseModel):
+    claims: List[ClaimResult]
+    citations: List[str]
+    trust_score: float
+
+# ------------------------
+# MAIN VERIFY ENDPOINT
+# ------------------------
+@app.post("/verify", response_model=VerifyResponse)
+def verify_text(data: VerifyRequest):
+    paragraph = data.paragraph.strip()
+
+    if not paragraph:
+        raise HTTPException(status_code=400, detail="Paragraph cannot be empty")
+
+    claims = extract_claims(paragraph)
+    results = []
+
+    supported_count = 0
 
     for claim in claims:
-        sources = search_trusted_sources(claim)
-        document = ""
-        source_used = "None"
+        label, confidence = verifier.verify(paragraph, claim)
+        if label == "SUPPORTED":
+            supported_count += 1
 
-        if sources:
-            source_used = sources[0]
-            document = scrape_page(source_used)
-
-        label, confidence = verifier.verify(document, claim)
-
-        claim_results.append(
+        results.append(
             ClaimResult(
                 claim=claim,
                 label=label,
-                confidence=confidence,
-                source=source_used
+                confidence=confidence
             )
         )
 
-        if source_used != "None":
-            citation_results.append(
-                CitationResult(
-                    citation=source_used,
-                    status=check_citation(source_used)
-                )
-            )
+    citations = check_citations(paragraph)
 
-    trust_score = calculate_trust_score(claim_results)
+    trust_score = round(
+        supported_count / len(results), 2
+    ) if results else 0.0
 
     return VerifyResponse(
-        claims=claim_results,
-        citations=citation_results,
+        claims=results,
+        citations=citations,
         trust_score=trust_score
     )

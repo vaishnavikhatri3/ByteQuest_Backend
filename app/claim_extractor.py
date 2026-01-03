@@ -1,11 +1,18 @@
-import nltk
+import re
+from typing import List
 
-def ensure_punkt():
-    try:
-        nltk.data.find("tokenizers/punkt")
-    except LookupError:
-        nltk.download("punkt", quiet=True)
+def extract_claims(text: str) -> List[str]:
+    """
+    Lightweight sentence splitter without NLTK.
+    Safe for Render & production.
+    """
+    if not text:
+        return []
 
-def extract_claims(text: str):
-    ensure_punkt()
-    return nltk.sent_tokenize(text)
+    # Split on . ? ! followed by space or end of string
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+
+    # Remove very short/noise sentences
+    sentences = [s for s in sentences if len(s.strip()) > 5]
+
+    return sentences if sentences else [text]

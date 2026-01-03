@@ -1,6 +1,8 @@
 import os
 import requests
+from typing import Tuple
 
+# Hugging Face MNLI model (hosted inference)
 HF_API_URL = "https://api-inference.huggingface.co/models/typeform/distilbert-base-uncased-mnli"
 HF_API_KEY = os.getenv("HF_API_KEY")
 
@@ -8,13 +10,23 @@ HEADERS = {
     "Authorization": f"Bearer {HF_API_KEY}"
 }
 
+
 class ClaimVerifier:
-    def verify(self, document: str, claim: str):
+    """
+    Verifies factual claims using Natural Language Inference (MNLI).
+    Returns label + confidence score.
+    """
+
+    def verify(self, document: str, claim: str) -> Tuple[str, float]:
         """
-        Verify a claim against a document using MNLI (Entailment).
-        Returns: (label, confidence)
+        document: full paragraph / context
+        claim: single extracted sentence
+
+        Returns:
+        ("SUPPORTED" | "HALLUCINATED" | "ERROR", confidence)
         """
 
+        # Safety check
         if not HF_API_KEY:
             return "ERROR", 0.0
 
@@ -32,15 +44,47 @@ class ClaimVerifier:
                 json=payload,
                 timeout=30
             )
+
+            if response.status_code != 200:
+                return "ERROR", 0.0
+
             result = response.json()
 
-            if isinstance(result, list):
-                scores = {item["label"]: item["score"] for item in result[0]}
-                entailment_score = scores.get("ENTAILMENT", 0.0)
-            else:
-                entailment_score = 0.0
+            """
+            Hugging Face API may return either:
+            1) List[Dict]
+               [
+                 {"label": "ENTAILMENT", "score": 0.91},
+                 {"label": "NEUTRAL", "score": 0.06},
+                 {"label": "CONTRADICTION", "score": 0.03}
+               ]
 
-            label = "SUPPORTED" if entailment_score > 0.5 else "HALLUCINATED"
+            2) List[List[Dict]]
+               [
+                 [
+                   {"label": "ENTAILMENT", "score": 0.91},
+                   {"label": "NEUTRAL", "score": 0.06},
+                   {"label": "CONTRADICTION", "score": 0.03}
+                 ]
+               ]
+            """
+
+            scores = {}
+
+            if isinstance(result, list) and len(result) > 0:
+                if isinstance(result[0], dict):
+                    scores = {item["label"]: item["score"] for item in result}
+                elif isinstance(result[0], list):
+                    scores = {item["label"]: item["score"] for item in result[0]}
+                else:
+                    return "ERROR", 0.0
+            else:
+                return "ERROR", 0.0
+
+            entailment_score = scores.get("ENTAILMENT", 0.0)
+
+            label = "SUPPORTED" if entailment_score >= 0.5 else "HALLUCINATED"
+
             return label, round(entailment_score, 3)
 
         except Exception:
